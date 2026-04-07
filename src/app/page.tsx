@@ -238,8 +238,9 @@ function SendMedia({
       </div>
 
       {useFile ? (
-        <Field label="Choose file">
+        <Field label="Choose file (max 16 MB)">
           <input ref={fileRef} type="file" accept={acceptFor(messageType)} className={input} required />
+          <p className="mt-1 text-xs text-slate-400">Images up to 5 MB, videos up to 16 MB, documents up to 16 MB</p>
         </Field>
       ) : (
         <Field label="Media URL (must be publicly accessible)">
