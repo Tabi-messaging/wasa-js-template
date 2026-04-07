@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 type Tab = 'send' | 'media' | 'poll' | 'location' | 'contact' | 'contacts' | 'conversations' | 'channels';
 
@@ -22,6 +22,15 @@ async function api(body: Record<string, unknown>) {
     body: JSON.stringify(body),
   });
   return res.json();
+}
+
+async function uploadFile(file: File): Promise<string> {
+  const fd = new FormData();
+  fd.append('file', file);
+  const res = await fetch('/api/upload', { method: 'POST', body: fd });
+  const data = await res.json();
+  if (!data.ok) throw new Error(data.error || 'Upload failed');
+  return data.url;
 }
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
@@ -128,7 +137,7 @@ TABI_CHANNEL_ID=your-channel-id`}
           {/* Form panel */}
           <div className="w-full max-w-md space-y-4">
             {tab === 'send' && <SendText run={run} loading={loading} />}
-            {tab === 'media' && <SendMedia run={run} loading={loading} />}
+            {tab === 'media' && <SendMedia run={run} loading={loading} setResult={setResult} setLoading={setLoading} channelId={channelId} />}
             {tab === 'poll' && <SendPoll run={run} loading={loading} />}
             {tab === 'location' && <SendLocation run={run} loading={loading} />}
             {tab === 'contact' && <SendContactCard run={run} loading={loading} />}
@@ -164,13 +173,55 @@ function SendText({ run, loading }: { run: (b: Record<string, unknown>) => Promi
   );
 }
 
-function SendMedia({ run, loading }: { run: (b: Record<string, unknown>) => Promise<void>; loading: boolean }) {
+function SendMedia({
+  run, loading, setResult, setLoading, channelId,
+}: {
+  run: (b: Record<string, unknown>) => Promise<void>;
+  loading: boolean;
+  setResult: (s: string) => void;
+  setLoading: (b: boolean) => void;
+  channelId: string;
+}) {
   const [to, setTo] = useState('');
   const [content, setContent] = useState('');
   const [messageType, setType] = useState('image');
   const [mediaUrl, setUrl] = useState('');
+  const [useFile, setUseFile] = useState(true);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setResult('');
+    try {
+      let finalUrl = mediaUrl;
+
+      if (useFile) {
+        const file = fileRef.current?.files?.[0];
+        if (!file) { setResult('Please select a file.'); setLoading(false); return; }
+        setResult('Uploading file...');
+        finalUrl = await uploadFile(file);
+        setResult('File uploaded — sending message...');
+      }
+
+      const r = await api({
+        action: 'messages.send',
+        channelId,
+        to,
+        content: content || file_caption(messageType),
+        messageType,
+        mediaUrl: finalUrl,
+      });
+      setResult(JSON.stringify(r, null, 2));
+    } catch (err: any) {
+      setResult(`Error: ${err.message}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
-    <form onSubmit={e => { e.preventDefault(); run({ action: 'messages.send', to, content, messageType, mediaUrl }); }} className="space-y-4">
+    <form onSubmit={handleSubmit} className="space-y-4">
       <Field label="Recipient"><input className={input} value={to} onChange={e => setTo(e.target.value)} placeholder="2348012345678" required /></Field>
       <Field label="Media type">
         <select className={input} value={messageType} onChange={e => setType(e.target.value)}>
@@ -180,28 +231,56 @@ function SendMedia({ run, loading }: { run: (b: Record<string, unknown>) => Prom
           <option value="document">Document</option>
         </select>
       </Field>
-      <Field label="Media URL"><input className={input} value={mediaUrl} onChange={e => setUrl(e.target.value)} placeholder="https://example.com/photo.jpg" required /></Field>
-      <Field label="Caption / text"><input className={input} value={content} onChange={e => setContent(e.target.value)} placeholder="Check this out!" required /></Field>
+
+      <div className="flex gap-2">
+        <button type="button" onClick={() => setUseFile(true)} className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${useFile ? 'bg-indigo-100 text-indigo-700' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}>Upload file</button>
+        <button type="button" onClick={() => setUseFile(false)} className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${!useFile ? 'bg-indigo-100 text-indigo-700' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}>Paste URL</button>
+      </div>
+
+      {useFile ? (
+        <Field label="Choose file">
+          <input ref={fileRef} type="file" accept={acceptFor(messageType)} className={input} required />
+        </Field>
+      ) : (
+        <Field label="Media URL (must be publicly accessible)">
+          <input className={input} value={mediaUrl} onChange={e => setUrl(e.target.value)} placeholder="https://example.com/photo.jpg" required />
+        </Field>
+      )}
+
+      <Field label="Caption / text"><input className={input} value={content} onChange={e => setContent(e.target.value)} placeholder="Check this out!" /></Field>
       <button type="submit" className={btn} disabled={loading}>Send Media</button>
     </form>
   );
 }
 
+function acceptFor(type: string) {
+  switch (type) {
+    case 'image': return 'image/*';
+    case 'video': return 'video/*';
+    case 'audio': return 'audio/*';
+    default: return '*/*';
+  }
+}
+
+function file_caption(type: string) {
+  return `Sent via Wasa (${type})`;
+}
+
 function SendPoll({ run, loading }: { run: (b: Record<string, unknown>) => Promise<void>; loading: boolean }) {
   const [to, setTo] = useState('');
-  const [pollName, setName] = useState('');
+  const [question, setQuestion] = useState('');
   const [optionsText, setOpts] = useState('Option 1\nOption 2\nOption 3');
-  const [selectableCount, setCount] = useState(1);
+  const [maxAnswer, setMax] = useState(1);
   return (
     <form onSubmit={e => {
       e.preventDefault();
       const options = optionsText.split('\n').map(o => o.trim()).filter(Boolean);
-      run({ action: 'messages.sendPoll', to, pollName, options, selectableCount });
+      run({ action: 'messages.sendPoll', to, question, options, maxAnswer });
     }} className="space-y-4">
       <Field label="Recipient"><input className={input} value={to} onChange={e => setTo(e.target.value)} placeholder="2348012345678" required /></Field>
-      <Field label="Poll question"><input className={input} value={pollName} onChange={e => setName(e.target.value)} placeholder="What's your favourite?" required /></Field>
+      <Field label="Poll question"><input className={input} value={question} onChange={e => setQuestion(e.target.value)} placeholder="What's your favourite?" required /></Field>
       <Field label="Options (one per line)"><textarea className={input + ' min-h-[100px]'} value={optionsText} onChange={e => setOpts(e.target.value)} required /></Field>
-      <Field label="Max selectable"><input className={input} type="number" min={1} value={selectableCount} onChange={e => setCount(+e.target.value)} /></Field>
+      <Field label="Max selectable answers"><input className={input} type="number" min={1} value={maxAnswer} onChange={e => setMax(+e.target.value)} /></Field>
       <button type="submit" className={btn} disabled={loading}>Send Poll</button>
     </form>
   );
@@ -211,13 +290,11 @@ function SendLocation({ run, loading }: { run: (b: Record<string, unknown>) => P
   const [to, setTo] = useState('');
   const [lat, setLat] = useState('');
   const [lng, setLng] = useState('');
-  const [name, setName] = useState('');
   return (
-    <form onSubmit={e => { e.preventDefault(); run({ action: 'messages.sendLocation', to, latitude: +lat, longitude: +lng, name }); }} className="space-y-4">
+    <form onSubmit={e => { e.preventDefault(); run({ action: 'messages.sendLocation', to, latitude: lat, longitude: lng }); }} className="space-y-4">
       <Field label="Recipient"><input className={input} value={to} onChange={e => setTo(e.target.value)} placeholder="2348012345678" required /></Field>
       <Field label="Latitude"><input className={input} type="number" step="any" value={lat} onChange={e => setLat(e.target.value)} placeholder="6.5244" required /></Field>
       <Field label="Longitude"><input className={input} type="number" step="any" value={lng} onChange={e => setLng(e.target.value)} placeholder="3.3792" required /></Field>
-      <Field label="Place name"><input className={input} value={name} onChange={e => setName(e.target.value)} placeholder="Lagos Office" /></Field>
       <button type="submit" className={btn} disabled={loading}>Send Location</button>
     </form>
   );
@@ -225,13 +302,13 @@ function SendLocation({ run, loading }: { run: (b: Record<string, unknown>) => P
 
 function SendContactCard({ run, loading }: { run: (b: Record<string, unknown>) => Promise<void>; loading: boolean }) {
   const [to, setTo] = useState('');
-  const [fullName, setName] = useState('');
-  const [phone, setPhone] = useState('');
+  const [contactName, setName] = useState('');
+  const [contactPhone, setPhone] = useState('');
   return (
-    <form onSubmit={e => { e.preventDefault(); run({ action: 'messages.sendContact', to, contact: { fullName, phone } }); }} className="space-y-4">
+    <form onSubmit={e => { e.preventDefault(); run({ action: 'messages.sendContact', to, contactName, contactPhone }); }} className="space-y-4">
       <Field label="Recipient"><input className={input} value={to} onChange={e => setTo(e.target.value)} placeholder="2348012345678" required /></Field>
-      <Field label="Contact name"><input className={input} value={fullName} onChange={e => setName(e.target.value)} placeholder="Jane Doe" required /></Field>
-      <Field label="Contact phone"><input className={input} value={phone} onChange={e => setPhone(e.target.value)} placeholder="2348099999999" required /></Field>
+      <Field label="Contact name"><input className={input} value={contactName} onChange={e => setName(e.target.value)} placeholder="Jane Doe" required /></Field>
+      <Field label="Contact phone"><input className={input} value={contactPhone} onChange={e => setPhone(e.target.value)} placeholder="2348099999999" required /></Field>
       <button type="submit" className={btn} disabled={loading}>Send Contact Card</button>
     </form>
   );

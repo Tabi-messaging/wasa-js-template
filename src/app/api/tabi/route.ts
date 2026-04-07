@@ -38,8 +38,8 @@ export async function POST(req: NextRequest) {
         result = await tabi.messages.send(channelId, {
           to: params.to,
           content: params.content,
-          messageType: params.messageType,
-          mediaUrl: params.mediaUrl,
+          messageType: params.messageType || 'text',
+          mediaUrl: params.mediaUrl || undefined,
         });
         break;
       case 'messages.sendLocation':
@@ -47,21 +47,21 @@ export async function POST(req: NextRequest) {
           to: params.to,
           latitude: params.latitude,
           longitude: params.longitude,
-          name: params.name,
         });
         break;
       case 'messages.sendPoll':
         result = await tabi.messages.sendPoll(channelId, {
           to: params.to,
-          name: params.pollName,
+          question: params.question,
           options: params.options,
-          selectableCount: params.selectableCount ?? 1,
+          maxAnswer: params.maxAnswer ?? 1,
         });
         break;
       case 'messages.sendContact':
         result = await tabi.messages.sendContact(channelId, {
           to: params.to,
-          contact: params.contact,
+          contactName: params.contactName,
+          contactPhone: params.contactPhone,
         });
         break;
       case 'messages.react':
