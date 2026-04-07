@@ -1,0 +1,24 @@
+{
+  "name": "wasa-js-template",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Boilerplate Next.js app showcasing the tabi-sdk — send messages, media, polls, manage contacts & more.",
+  "scripts": {
+    "dev": "next dev -p 4000",
+    "build": "next build",
+    "start": "next start -p 4000"
+  },
+  "dependencies": {
+    "next": "^15.0.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "tabi-sdk": "latest"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.0.0",
+    "tailwindcss": "^4.0.0",
+    "typescript": "^5.4.0",
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0"
+  }
+}
