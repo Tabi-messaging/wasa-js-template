@@ -1,13 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { writeFile, mkdir } from 'fs/promises';
-import { join } from 'path';
-import { randomUUID } from 'crypto';
 
 /**
- * Accepts a file upload via multipart/form-data, stores it in /tmp,
- * and returns a localhost URL that the Tabi API can fetch.
- *
- * For production, swap this with a cloud storage upload (S3, Cloudinary, etc.).
+ * Accepts a file upload via multipart/form-data and returns a
+ * base64 data-URL that the Tabi API can consume directly.
  */
 export async function POST(req: NextRequest) {
   try {
@@ -18,20 +13,11 @@ export async function POST(req: NextRequest) {
     }
 
     const bytes = await file.arrayBuffer();
-    const buffer = Buffer.from(bytes);
+    const base64 = Buffer.from(bytes).toString('base64');
+    const mime = file.type || 'application/octet-stream';
+    const dataUrl = `data:${mime};base64,${base64}`;
 
-    const dir = join(process.cwd(), 'public', 'uploads');
-    await mkdir(dir, { recursive: true });
-
-    const ext = file.name.split('.').pop() || 'bin';
-    const filename = `${randomUUID()}.${ext}`;
-    const filepath = join(dir, filename);
-    await writeFile(filepath, buffer);
-
-    const origin = req.nextUrl.origin;
-    const url = `${origin}/uploads/${filename}`;
-
-    return NextResponse.json({ ok: true, url, filename: file.name, size: buffer.length });
+    return NextResponse.json({ ok: true, url: dataUrl, filename: file.name, size: bytes.byteLength });
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
